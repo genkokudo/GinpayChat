@@ -21,8 +21,16 @@ public class GameState
     // 成功/失敗の積み重ね（エンディングの色合いを変える）
     public int SuccessCount { get; set; } = 0;
     public int FailureCount { get; set; } = 0;
+    // ラウンドごとに蓄積されるあらすじ
+    public List<string> StoryLog { get; set; } = new();
 
     public bool IsComplete => CurrentRound >= MaxRounds;
+
+    // GenerateProblemAsync用に直近のあらすじを連結して返す
+    public string GetStorySummary() =>
+        StoryLog.Count == 0
+            ? "（まだなし）"
+            : string.Join(" → ", StoryLog);
 }
 
 public class RoundRecord

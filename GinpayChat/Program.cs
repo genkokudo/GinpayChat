@@ -1,12 +1,11 @@
 ﻿using GinpayChat.Models;
 using GinpayChat.Plugins;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using System.Text.Json;
-
-var builder = Kernel.CreateBuilder();
 
 // appsettings.jsonとappsettings.local.jsonから設定を読み込む
 var config = new ConfigurationBuilder()
@@ -34,6 +33,8 @@ if (string.IsNullOrWhiteSpace(apiKey))
 
 
 // Kernel構築 
+var builder = Kernel.CreateBuilder();
+
 builder.AddAzureOpenAIChatCompletion(deployment, endpoint, apiKey);
 var kernel = builder.Build();
 
@@ -77,42 +78,84 @@ while (!state.IsComplete)
     state.CurrentRound++;
     Console.WriteLine($"\n━━━ Round {state.CurrentRound} / {state.MaxRounds} ━━━");
 
-    // 問題生成
-    Console.WriteLine("AIが状況を生成中...");
-    var historyJson = JsonSerializer.Serialize(state.Rounds);
-    var problem = await plugin.GenerateProblemAsync(
-        state.Setting, historyJson, state.CurrentRound,
-        state.SuccessCount, state.FailureCount);
+    // 問題生成（リトライループ付き）
+    string problem = string.Empty;
+    while (true)
+    {
+        var summary = state.GetStorySummary();
+        try
+        {
+            Console.WriteLine("AIが状況を生成中...");
+            problem = await plugin.GenerateProblemAsync(
+                state.Setting, summary,
+                state.CurrentRound, state.SuccessCount, state.FailureCount);
+            break; // 成功したら抜ける
+        }
+        catch (HttpOperationException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            Console.WriteLine("⚠️  AIのコンテントフィルターに引っかかりました。");
+            Console.WriteLine("別の展開で再生成します...");
+            // あらすじを少し書き換えて再試行
+            summary = string.IsNullOrEmpty(summary)
+                ? "穏やかな冒険が始まった。"
+                : summary + "（場面は穏やかな方向へ転じた）";
+        }
+    }
 
     Console.WriteLine($"\n【状況】\n{problem}\n");
 
-    // プレイヤー入力
-    Console.Write("あなたの行動・台詞を入力してください > ");
-    var playerAction = Console.ReadLine() ?? "";
-
-    // 評価
-    Console.WriteLine("\nAIが評価中...");
-    var (isSuccess, evaluation, nextSituation) =
-        await plugin.EvaluateActionAsync(problem, playerAction, state.Setting);
-
-    // 結果表示
-    Console.WriteLine(isSuccess ? "\n✅ 成功！" : "\n❌ 失敗...");
-    Console.WriteLine($"【評価】{evaluation}");
-    Console.WriteLine($"【次の展開】{nextSituation}");
-
-    // 状態更新
-    if (isSuccess) state.SuccessCount++;
-    else state.FailureCount++;
-
-    state.Rounds.Add(new RoundRecord
+    // プレイヤー入力〜評価（リトライループ付き）
+    while (true)
     {
-        RoundNumber = state.CurrentRound,
-        Problem = problem,
-        PlayerAction = playerAction,
-        IsSuccess = isSuccess,
-        Evaluation = evaluation,
-        NextSituation = nextSituation
-    });
+        Console.Write("あなたの行動・台詞を入力してください > ");
+        var rawInput = Console.ReadLine() ?? "";
+
+        try
+        {
+            Console.WriteLine("入力を要約中...");
+            var playerAction = await plugin.SummarizePlayerInputAsync(rawInput);
+
+            Console.WriteLine("\nAIが評価中...");
+            var (isSuccess, evaluation, nextSituation) =
+                await plugin.EvaluateActionAsync(problem, playerAction, state.Setting);
+
+            Console.WriteLine(isSuccess ? "\n✅ 成功！" : "\n❌ 失敗...");
+            Console.WriteLine($"【評価】{evaluation}");
+            Console.WriteLine($"【次の展開】{nextSituation}");
+
+            if (isSuccess) state.SuccessCount++;
+            else state.FailureCount++;
+
+            state.Rounds.Add(new RoundRecord
+            {
+                RoundNumber = state.CurrentRound,
+                Problem = problem,
+                PlayerAction = playerAction,
+                IsSuccess = isSuccess,
+                Evaluation = evaluation,
+                NextSituation = nextSituation
+            });
+
+            Console.WriteLine("あらすじを記録中...");
+            var roundSummary = await plugin.SummarizeRoundAsync(
+                problem,
+                playerAction,
+                isSuccess ? "成功" : "失敗",
+                nextSituation);
+
+            // ★ 洗い替えやなくリストに追加
+            state.StoryLog.Add(roundSummary);
+            Console.WriteLine($"【ログ追加】{roundSummary}");
+
+            break;
+        }
+        catch (HttpOperationException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            Console.WriteLine("⚠️  その入力はAIのフィルターに引っかかりました。");
+            Console.Write("別の行動を入力してください > ");
+            // ループの先頭に戻って再入力させる
+        }
+    }
 
     Console.WriteLine("\nEnterキーで続ける...");
     Console.ReadLine();
@@ -124,25 +167,14 @@ Console.WriteLine("         ENDING");
 Console.WriteLine("═══════════════════════════════════");
 Console.WriteLine("AIが物語を紡いでいます...\n");
 
-var historyFinal = JsonSerializer.Serialize(state.Rounds);
 var ending = await plugin.GenerateEndingAsync(
-    state.Setting, historyFinal, state.SuccessCount, state.FailureCount);
+    state.Setting,
+    state.GetStorySummary(),
+    state.SuccessCount,
+    state.FailureCount);
 
 Console.WriteLine(ending);
 Console.WriteLine("\n━━━ おわり ━━━");
 Console.ReadLine();
 
-// 没
-//ChatCompletionAgent agent =
-//    new()
-//    {
-//        Name = "SK-Agent",
-//        Instructions = "You are a helpful assistant.",
-//        Kernel = kernel,
-//    };
 
-//await foreach (AgentResponseItem<ChatMessageContent> response
-//    in agent.InvokeAsync("Write a haiku about Semantic Kernel."))
-//{
-//    Console.WriteLine(response.Message);
-//}
