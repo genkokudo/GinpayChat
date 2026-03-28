@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace GinpayChat.Models;
+namespace AiChatGame.Core.Models;
 
 /// <summary>
 /// ゲームセッション全体の状態を保持するクラス。
@@ -25,20 +25,11 @@ public class GameState
     public List<string> StoryLog { get; set; } = new();
 
     public bool IsComplete => CurrentRound >= MaxRounds;
+    public string CurrentProblem { get; set; } = string.Empty;
 
     // GenerateProblemAsync用に直近のあらすじを連結して返す
     public string GetStorySummary() =>
         StoryLog.Count == 0
             ? "（まだなし）"
             : string.Join(" → ", StoryLog);
-}
-
-public class RoundRecord
-{
-    public int RoundNumber { get; set; }
-    public string Problem { get; set; } = string.Empty;      // AIが提示した問題
-    public string PlayerAction { get; set; } = string.Empty; // プレイヤーの入力
-    public bool IsSuccess { get; set; }                      // 成功/失敗
-    public string Evaluation { get; set; } = string.Empty;   // AIの評価コメント
-    public string NextSituation { get; set; } = string.Empty;// 次の展開
 }

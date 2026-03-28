@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "description": "",
+  "execution_settings": {
+    "default": {
+      "max_tokens": 200,
+      "temperature": 0.7
+    }
+  },
+  "input_variables": [
+    {
+      "name": "setting",
+      "description": "ゲームの舞台設定",
+      "default": ""
+    },
+    {
+      "name": "storySummary",
+      "description": "これまでのあらすじ",
+      "default": "（まだなし）"
+    },
+    {
+      "name": "successCount",
+      "description": "成功回数",
+      "default": "0"
+    },
+    {
+      "name": "failureCount",
+      "description": "失敗回数",
+      "default": "0"
+    }
+  ]
+}

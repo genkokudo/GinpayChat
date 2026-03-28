@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "description": "ゲームのジャンルと舞台をAIが自動生成する",
+  "execution_settings": {
+    "default": {
+      "max_tokens": 200,
+      "temperature": 0.9
+    }
+  },
+  "input_variables": []
+}

@@ -1,5 +1,5 @@
-﻿using GinpayChat.Models;
-using GinpayChat.Plugins;
+﻿using AiChatGame.Core.Models;
+using AiChatGame.Core.Plugins;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
@@ -41,6 +41,11 @@ var kernel = builder.Build();
 var chatService = kernel.GetRequiredService<IChatCompletionService>();
 var plugin = new GamePlugin(chatService);
 
+// ファイルPluginをKernelに登録
+var pluginDirectory = Path.Combine(AppContext.BaseDirectory, "Plugins", "GamePlugin");
+var gamePlugin = kernel.ImportPluginFromPromptDirectory(pluginDirectory, "GamePlugin");
+
+
 // ゲーム開始
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 Console.WriteLine("═══════════════════════════════════");
@@ -64,7 +69,7 @@ if (choice == "2")
 else
 {
     Console.WriteLine("\nAIが舞台を考えています...");
-    (state.Genre, state.Setting) = await plugin.GenerateSettingAsync();
+    (state.Genre, state.Setting) = await plugin.GenerateSettingAsync(); // パース処理があって面倒なのでC#ネイティブのプロンプトを使う。外部ファイルのプラグインを使うなら、2つに分ける。
 }
 
 Console.WriteLine($"\n【舞台】{state.Genre}");
@@ -86,9 +91,19 @@ while (!state.IsComplete)
         try
         {
             Console.WriteLine("AIが状況を生成中...");
-            problem = await plugin.GenerateProblemAsync(
-                state.Setting, summary,
-                state.CurrentRound, state.SuccessCount, state.FailureCount);
+            //problem = await plugin.GenerateProblemAsync(
+            //    state.Setting, summary,
+            //    state.CurrentRound, state.SuccessCount, state.FailureCount);
+            var result = await kernel.InvokeAsync(gamePlugin["GenerateProblem"], new KernelArguments
+            {
+                ["setting"] = state.Setting,
+                ["storySummary"] = state.GetStorySummary(),
+                ["round"] = state.CurrentRound.ToString(),
+                ["successCount"] = state.SuccessCount.ToString(),
+                ["failureCount"] = state.FailureCount.ToString()
+            });
+            problem = result.GetValue<string>() ?? string.Empty;
+
             break; // 成功したら抜ける
         }
         catch (HttpOperationException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
@@ -167,11 +182,20 @@ Console.WriteLine("         ENDING");
 Console.WriteLine("═══════════════════════════════════");
 Console.WriteLine("AIが物語を紡いでいます...\n");
 
-var ending = await plugin.GenerateEndingAsync(
-    state.Setting,
-    state.GetStorySummary(),
-    state.SuccessCount,
-    state.FailureCount);
+//var ending = await plugin.GenerateEndingAsync(
+//    state.Setting,
+//    state.GetStorySummary(),
+//    state.SuccessCount,
+//    state.FailureCount);
+
+
+var ending = await kernel.InvokeAsync(gamePlugin["GenerateEnding"], new KernelArguments
+{
+    ["setting"] = state.Setting,
+    ["storySummary"] = state.GetStorySummary(),
+    ["successCount"] = state.SuccessCount.ToString(),
+    ["failureCount"] = state.FailureCount.ToString()
+});
 
 Console.WriteLine(ending);
 Console.WriteLine("\n━━━ おわり ━━━");
